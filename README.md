@@ -30,8 +30,7 @@ I suspect we are loosing a lot due to internal fragmentation of the heap. In mor
 
 ## Plan of action
 
-- Learning about mem. alloc in golang. [MEM](https://github.com/MoserMichael/openshift-memusage/blob/master/README.md) 
-    - tcmalloc (no longer used, but it's well documented and is the grandaddy of them)
+- Learning about mem. alloc in golang. see [MEM](https://github.com/MoserMichael/openshift-memusage/blob/master/MEM.md) 
     - current mem alloc package in golang runtime. (src/runtime/malloc.go in https://github.com/golang/go )
     - what can we get out of ReadMemStats api in terms of data?
 - Quantify the internal fragmentation
