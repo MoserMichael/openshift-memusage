@@ -80,3 +80,153 @@ if the current span has been exhausted, then it needs to get another memory page
 
 [mcache refill](https://github.com/golang/go/blob/master/src/runtime/mcache.go) the current span of the given size class is returned to the heap and we get a new span object from the heap that will stand in for the current size class. Note that this is an expensive operation as a lock needs to be obtained for that purpose in [mcache cacheSpan](https://github.com/golang/go/blob/master/src/runtime/mcentral.go) 
 
+
+## allocation statistics
+
+The function [ReadMemStats)(https://github.com/golang/go/blob/master/src/runtime/mstats.go)  copies memory statistics into structure MemStats.
+
+Here they use a peculiar trick: all memory statistics are kept in a struct of type mstats that has exactly the same layout as structure MemStats. The difference is 
+that all fields in MemStats are visible from other packages (the field names start with a capital letter) while the fields in structure mstats are private (start with a lower case letter).
+The internal copy function readmemstats_m then copies two seemingly unrelated structures by mean of the following statement. don't do this at home!
+
+```
+	memmove(unsafe.Pointer(stats), unsafe.Pointer(&memstats), sizeof_C_MStats)
+```
+
+call ReadMemStats is quite expensive: in order to keep us from seing an outdated copy of the memory statistics all other threads must be stopped at garbage collection save points, then after copying the structure to the user supplied MemStats arguments all the threads are started up again.
+
+Lets write a small test program in order to learn about memory statistics. 
+
+The program first calls ReadMemStat and prints the counters as a baseline.
+
+Then it does three allocations, for each of these allocation it shows the difference of the values returned by ReadMemStat,
+We have three allocations, a very small one of four bytes length, then a larger one - an array of 1024 bytes (from a size class that has no prior allocations); then a very large one - 20000 bytes (this on isn't covered by any size class - it's a large allocation)
+
+Here is the output of the test program
+
+```
+
+Baseline 
+
+Alloc:                                  119112 [bytes of allocated heap objects]
+TotalAlloc                              119112 [cumulative bytes allocated for heap objects]
+Sys:                                  69928960 [total bytes of memory obtained from the OS]
+Mallocs:                                   177 [cumulative count of heap objects allocated]
+Frees:                                       1 [cumulative count of heap objects freed]
+HeapAlloc:                              119112 [bytes of allocated heap objects]
+HeapSys:                              66813952 [bytes of heap memory obtained from the OS (including reserved)]
+HeapIdle:                             66355200 [bytes in idle (unused) spans]
+HeapInuse:                              458752 [bytes in in-use spans]
+HeapReleased:                         66289664 [bytes of physical memory returned to the OS]
+HeapObjects:                               176 [number of allocated heap objects]
+StackInuse:                             294912 [bytes in stack spans] 
+StackSys:                               294912 [bytes of stack memory obtained from the OS]
+MSpanInuse:                               7208 [bytes of allocated mspan structures]
+MSpanSys:                                16384 [bytes of memory obtained from the OS for mspan]
+MCacheInuse:                             13888 [of allocated mcache structure]
+MCacheSys:                               16384 [bytes of memory obtained from the OS for mcache structures]
+BuckHashSys:                              2212 [bytes of memory in profiling bucket hash tables]
+GCSys:                                 2240512 [memory in garbage collection metadata]
+OtherSys:                               544604 [memory in miscellaneous off-heap runtime allocations]
+NextGC:                                4473924 [target heap size of the next GC cycle]
+sizeClass: 1 Size: 8 Mallocs 5 Frees 0
+sizeClass: 2 Size: 16 Mallocs 51 Frees 0
+sizeClass: 3 Size: 32 Mallocs 32 Frees 0
+sizeClass: 4 Size: 48 Mallocs 17 Frees 0
+sizeClass: 5 Size: 64 Mallocs 5 Frees 0
+sizeClass: 6 Size: 80 Mallocs 3 Frees 0
+sizeClass: 7 Size: 96 Mallocs 7 Frees 0
+sizeClass: 8 Size: 112 Mallocs 1 Frees 0
+sizeClass: 9 Size: 128 Mallocs 3 Frees 0
+sizeClass: 14 Size: 208 Mallocs 8 Frees 0
+sizeClass: 17 Size: 256 Mallocs 1 Frees 0
+sizeClass: 21 Size: 384 Mallocs 14 Frees 0
+sizeClass: 22 Size: 416 Mallocs 3 Frees 0
+sizeClass: 24 Size: 480 Mallocs 1 Frees 0
+sizeClass: 28 Size: 704 Mallocs 1 Frees 0
+sizeClass: 30 Size: 896 Mallocs 7 Frees 0
+sizeClass: 32 Size: 1152 Mallocs 3 Frees 0
+sizeClass: 36 Size: 1792 Mallocs 4 Frees 0
+sizeClass: 43 Size: 4096 Mallocs 1 Frees 0
+sizeClass: 50 Size: 8192 Mallocs 1 Frees 0
+sizeClass: 51 Size: 9472 Mallocs 8 Frees 0
+
+
+Empty size classes:
+
+sizeClass: 0 Size: 0 Mallocs 0 Frees 0
+sizeClass: 10 Size: 144 Mallocs 0 Frees 0
+sizeClass: 11 Size: 160 Mallocs 0 Frees 0
+sizeClass: 12 Size: 176 Mallocs 0 Frees 0
+sizeClass: 13 Size: 192 Mallocs 0 Frees 0
+sizeClass: 15 Size: 224 Mallocs 0 Frees 0
+sizeClass: 16 Size: 240 Mallocs 0 Frees 0
+sizeClass: 18 Size: 288 Mallocs 0 Frees 0
+sizeClass: 19 Size: 320 Mallocs 0 Frees 0
+sizeClass: 20 Size: 352 Mallocs 0 Frees 0
+sizeClass: 23 Size: 448 Mallocs 0 Frees 0
+sizeClass: 25 Size: 512 Mallocs 0 Frees 0
+sizeClass: 26 Size: 576 Mallocs 0 Frees 0
+sizeClass: 27 Size: 640 Mallocs 0 Frees 0
+sizeClass: 29 Size: 768 Mallocs 0 Frees 0
+sizeClass: 31 Size: 1024 Mallocs 0 Frees 0
+sizeClass: 33 Size: 1280 Mallocs 0 Frees 0
+sizeClass: 34 Size: 1408 Mallocs 0 Frees 0
+sizeClass: 35 Size: 1536 Mallocs 0 Frees 0
+sizeClass: 37 Size: 2048 Mallocs 0 Frees 0
+sizeClass: 38 Size: 2304 Mallocs 0 Frees 0
+sizeClass: 39 Size: 2688 Mallocs 0 Frees 0
+sizeClass: 40 Size: 3072 Mallocs 0 Frees 0
+sizeClass: 41 Size: 3200 Mallocs 0 Frees 0
+sizeClass: 42 Size: 3456 Mallocs 0 Frees 0
+sizeClass: 44 Size: 4864 Mallocs 0 Frees 0
+sizeClass: 45 Size: 5376 Mallocs 0 Frees 0
+sizeClass: 46 Size: 6144 Mallocs 0 Frees 0
+sizeClass: 47 Size: 6528 Mallocs 0 Frees 0
+sizeClass: 48 Size: 6784 Mallocs 0 Frees 0
+sizeClass: 49 Size: 6912 Mallocs 0 Frees 0
+sizeClass: 52 Size: 9728 Mallocs 0 Frees 0
+sizeClass: 53 Size: 10240 Mallocs 0 Frees 0
+sizeClass: 54 Size: 10880 Mallocs 0 Frees 0
+sizeClass: 55 Size: 12288 Mallocs 0 Frees 0
+sizeClass: 56 Size: 13568 Mallocs 0 Frees 0
+sizeClass: 57 Size: 14336 Mallocs 0 Frees 0
+sizeClass: 58 Size: 16384 Mallocs 0 Frees 0
+sizeClass: 59 Size: 18432 Mallocs 0 Frees 0
+sizeClass: 60 Size: 19072 Mallocs 0 Frees 0
+
+Diff (alloc int32) 
+
+Alloc:                                      16 [bytes of allocated heap objects]
+TotalAlloc                                  16 [cumulative bytes allocated for heap objects]
+Mallocs:                                     1 [cumulative count of heap objects allocated]
+HeapAlloc:                                  16 [bytes of allocated heap objects]
+HeapObjects:                                 1 [number of allocated heap objects]
+sizeClass: 2 Size: 16 Mallocs 1 Frees 0
+
+Diff (alloc make([]byte,1024) 
+
+Alloc:                                    1024 [bytes of allocated heap objects]
+TotalAlloc                                1024 [cumulative bytes allocated for heap objects]
+Mallocs:                                     1 [cumulative count of heap objects allocated]
+HeapAlloc:                                1024 [bytes of allocated heap objects]
+HeapIdle:                                -8192 [bytes in idle (unused) spans]
+HeapInuse:                                8192 [bytes in in-use spans]
+HeapObjects:                                 1 [number of allocated heap objects]
+MSpanInuse:                                136 [bytes of allocated mspan structures]
+sizeClass: 31 Size: 1024 Mallocs 1 Frees 0
+
+Diff (alloc make([]byte,20000) 
+
+Alloc:                                   20480 [bytes of allocated heap objects]
+TotalAlloc                               20480 [cumulative bytes allocated for heap objects]
+Mallocs:                                     1 [cumulative count of heap objects allocated]
+HeapAlloc:                               20480 [bytes of allocated heap objects]
+HeapIdle:                               -40960 [bytes in idle (unused) spans]
+HeapInuse:                               40960 [bytes in in-use spans]
+HeapObjects:                                 1 [number of allocated heap objects]
+MSpanInuse:                                272 [bytes of allocated mspan structures]
+
+
+```
+
