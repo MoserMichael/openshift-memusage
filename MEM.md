@@ -83,7 +83,7 @@ if the current span has been exhausted, then it needs to get another memory page
 
 ## allocation statistics
 
-The function [ReadMemStats)(https://github.com/golang/go/blob/master/src/runtime/mstats.go)  copies memory statistics into structure MemStats.
+The function [ReadMemStats](https://github.com/golang/go/blob/master/src/runtime/mstats.go)  copies memory statistics into structure MemStats.
 
 Here they use a peculiar trick: all memory statistics are kept in a struct of type mstats that has exactly the same layout as structure MemStats. The difference is 
 that all fields in MemStats are visible from other packages (the field names start with a capital letter) while the fields in structure mstats are private (start with a lower case letter).
@@ -93,7 +93,7 @@ The internal copy function readmemstats_m then copies two seemingly unrelated st
 	memmove(unsafe.Pointer(stats), unsafe.Pointer(&memstats), sizeof_C_MStats)
 ```
 
-call ReadMemStats is quite expensive: in order to keep us from seing an outdated copy of the memory statistics all other threads must be stopped at garbage collection save points, then after copying the structure to the user supplied MemStats arguments all the threads are started up again.
+call ReadMemStats is quite expensive: in order to keep us from seing an outdated copy of the memory statistics all other threads must be stopped at garbage collection save points, then after copying the structure to the user supplied MemStats arguments all the threads are started up again. (so this function shouldn't be called frequently)
 
 Lets write a small test program in order to learn about memory statistics. 
 
