@@ -7,7 +7,7 @@ The main entry point of the allocator is [mallocgc](https://github.com/golang/go
 
 Note that in this document I am linking to the source file that contains a function, i am not linking to the line that this function curently is placed on - as this location may well change in the future, so you might have to scroll a bit each time you follow a link.
 
-# main data structures of the go runtime
+# Main data structures of the go runtime
 
 One needs to know the role of the main classes, in order to understand the flow of the allocator, these are explained [here](https://github.com/golang/go/blob/master/src/runtime/HACKING.md)
 
@@ -21,8 +21,9 @@ These types are defined in file  [/src/runtime/runtime2.go](https://github.com/g
 When an M stops executing user Go code, for example by entering a system call, it returns its P to the idle P pool. 
 In order to resume executing user Go code, for example on return from a system call, it must acquire a P from the idle pool."
 
+They runtime also puts data maintained per OS thread into the M object - this per thread data can be accessed without the need of obtaining a lock.
 
-# memory allocator overview
+# Memory allocator overview
 
 The memory allocator uses a set of fixed sized pools, each of these pools can return a memory block of constant size.
 The memory allocator has to service an allocation request of arbitrary size, if first searches for the fixed size pool of the nearest size larger then that of the requested memory block, once such a fixed size pool has been found it is asked to service an allocation.
@@ -33,7 +34,7 @@ some important data structures:
 - type [mcache](https://github.com/golang/go/blob/master/src/runtime/mcache.go) used to allocate memory objects of up to to 32768 bytes (maxSmallSize constant. this object owns a set mspan objecs. There is one mcache per operating system thread - the M type that holds all per thread data owns an mcache; this increases performance because no lock has to be acquired if an allocation is coming from the per thread mcache. Initially all mspan objects are empty, they are filled up upon demand, as allocations are made.
 
 
-# flow of a memory allocation in go
+# Flow of a memory allocation in go
 
 the allocator entry point is function [mallocgc](https://github.com/golang/go/blob/master/src/runtime/malloc.go) Actually the task of mallocgc is relatively simple as there is no 'free' function in a garbage collected language ;-)
 
@@ -70,9 +71,9 @@ flow of mallocgc
 [mspan nextFreeFast](https://github.com/golang/go/blob/master/src/runtime/malloc.go) - if a free object is available in the mspan object then this function returns a pointer to it. 
 
 Each span object owns a a memory page (span.base) that can be thought of as an array of elements of the same size (span.elemsize)
-For maintaining the next batch of 64 entries, the mspan has 64 bit integer structure member span.allocCache that is treated as a bitmap; if the 10th bit is zero that means that the 10th element can be allocated. To make the lookup of the first free bit shorter they maintain the next free index span span.freeIndex and shift the bitmap to the left on each call.
+For maintaining the next batch of 64 entries, the mspan has an array of 64 bit integer structure member span.allocCache that is treated as a bitmap; if the 10th bit is zero that means that the 10th element can be allocated. To make the lookup of the first free bit shorter they maintain the next free index span span.freeIndex and shift the bitmap to the left on each call.
 
-(didn't understand why they need a bitmap if they are not freeing any elements)
+Of course ther is no explicit function for freeing a object that is part of the bitmap, however the object might become unreachabel (i.e. no other object points at it); in this case it will be cleaned out by a garbage collection pass.
 
 [mcache nextFree](https://github.com/golang/go/blob/master/src/runtime/malloc.go) - we get here if the current batch of elements covered by bitmap span.allocCache didn't show any free elements, so span.allocCache is refilled - in [refillAllocCache](https://github.com/golang/go/blob/master/src/runtime/malloc.go) the next eight bytes are fetched from span.allocBits and negated (so that zero means a free slot).`[nextFreeIndex](https://github.com/golang/go/blob/master/src/runtime/malloc.go) persists until a free index slot has been found.
 
@@ -99,29 +100,40 @@ Lets write a small test program in order to learn about memory statistics.
 
 The program first calls ReadMemStat and prints the counters as a baseline.
 
-Then it does three allocations, for each of these allocation it shows the difference of the values returned by ReadMemStat,
-We have three allocations, a very small one of four bytes length, then a larger one - an array of 1024 bytes (from a size class that has no prior allocations); then a very large one - 20000 bytes (this on isn't covered by any size class - it's a large allocation)
+Then it does three allocations, for each of these allocation it shows the difference of the values returned by ReadMemStat - relative to the values we had before the allocation.
+We have three allocations
 
-Here is the output of the test program
+- a very small one of four bytes length in a size class that already had seen allocations before
+- then a larger one - an array of 1024 bytes (from a size class that has no prior allocations); 
+- then a very large one - 20000 bytes (this on isn't covered by any size class - it's a large allocation)
+
+Some things that can be seen from this program run on go 1.13.6: (output of test program at the end of this file)
+
+- a hello world go program preallocates about 63M of memory and puts it into unused span object (MSpanSys)
+- by the time we hit the main function there are already 21 non empty size classes (out of 60) we had 178 allocation before hitting main (as displayed in the Baseline)
+
+
+## test program output
+
+Here is the output of the test program on go 1.13.6
 
 ```
-
 Baseline 
 
-Alloc:                                  119112 [bytes of allocated heap objects]
-TotalAlloc                              119112 [cumulative bytes allocated for heap objects]
+Alloc:                                  119688 [bytes of allocated heap objects]
+TotalAlloc                              119688 [cumulative bytes allocated for heap objects]
 Sys:                                  69928960 [total bytes of memory obtained from the OS]
-Mallocs:                                   177 [cumulative count of heap objects allocated]
+Mallocs:                                   179 [cumulative count of heap objects allocated]
 Frees:                                       1 [cumulative count of heap objects freed]
-HeapAlloc:                              119112 [bytes of allocated heap objects]
+HeapAlloc:                              119688 [bytes of allocated heap objects]
 HeapSys:                              66813952 [bytes of heap memory obtained from the OS (including reserved)]
-HeapIdle:                             66355200 [bytes in idle (unused) spans]
-HeapInuse:                              458752 [bytes in in-use spans]
-HeapReleased:                         66289664 [bytes of physical memory returned to the OS]
-HeapObjects:                               176 [number of allocated heap objects]
+HeapIdle:                             66387968 [bytes in idle (unused) spans]
+HeapInuse:                              425984 [bytes in in-use spans]
+HeapReleased:                         66322432 [bytes of physical memory returned to the OS]
+HeapObjects:                               178 [number of allocated heap objects]
 StackInuse:                             294912 [bytes in stack spans] 
 StackSys:                               294912 [bytes of stack memory obtained from the OS]
-MSpanInuse:                               7208 [bytes of allocated mspan structures]
+MSpanInuse:                               6664 [bytes of allocated mspan structures]
 MSpanSys:                                16384 [bytes of memory obtained from the OS for mspan]
 MCacheInuse:                             13888 [of allocated mcache structure]
 MCacheSys:                               16384 [bytes of memory obtained from the OS for mcache structures]
@@ -134,12 +146,13 @@ sizeClass: 2 Size: 16 Mallocs 51 Frees 0
 sizeClass: 3 Size: 32 Mallocs 32 Frees 0
 sizeClass: 4 Size: 48 Mallocs 17 Frees 0
 sizeClass: 5 Size: 64 Mallocs 5 Frees 0
-sizeClass: 6 Size: 80 Mallocs 3 Frees 0
+sizeClass: 6 Size: 80 Mallocs 2 Frees 0
 sizeClass: 7 Size: 96 Mallocs 7 Frees 0
 sizeClass: 8 Size: 112 Mallocs 1 Frees 0
-sizeClass: 9 Size: 128 Mallocs 3 Frees 0
-sizeClass: 14 Size: 208 Mallocs 8 Frees 0
+sizeClass: 9 Size: 128 Mallocs 4 Frees 0
+sizeClass: 14 Size: 208 Mallocs 9 Frees 0
 sizeClass: 17 Size: 256 Mallocs 1 Frees 0
+sizeClass: 19 Size: 320 Mallocs 1 Frees 0
 sizeClass: 21 Size: 384 Mallocs 14 Frees 0
 sizeClass: 22 Size: 416 Mallocs 3 Frees 0
 sizeClass: 24 Size: 480 Mallocs 1 Frees 0
@@ -151,6 +164,7 @@ sizeClass: 43 Size: 4096 Mallocs 1 Frees 0
 sizeClass: 50 Size: 8192 Mallocs 1 Frees 0
 sizeClass: 51 Size: 9472 Mallocs 8 Frees 0
 
+In all non empty size classes: malloc calls: 178 free calls: 0
 
 Empty size classes:
 
@@ -162,7 +176,6 @@ sizeClass: 13 Size: 192 Mallocs 0 Frees 0
 sizeClass: 15 Size: 224 Mallocs 0 Frees 0
 sizeClass: 16 Size: 240 Mallocs 0 Frees 0
 sizeClass: 18 Size: 288 Mallocs 0 Frees 0
-sizeClass: 19 Size: 320 Mallocs 0 Frees 0
 sizeClass: 20 Size: 352 Mallocs 0 Frees 0
 sizeClass: 23 Size: 448 Mallocs 0 Frees 0
 sizeClass: 25 Size: 512 Mallocs 0 Frees 0

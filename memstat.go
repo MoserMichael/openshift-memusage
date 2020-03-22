@@ -101,17 +101,28 @@ func dumpMemStats(stat *runtime.MemStats)  {
         fmt.Printf("NumForcedGC:    %30d [number of GC cycles that were forced by the application calling the GC function]\n", stat.NumForcedGC)
     }
 
+    var totalMalloc uint64
+    var totalFree  uint64
+    var nonEmpty int
 
 	for i := 0; i < 61; i += 1 {
 		if stat.BySize[i].Mallocs != 0 || stat.BySize[i].Frees != 0 {
 			fmt.Printf("sizeClass: %d Size: %d Mallocs %d Frees %d\n", i, stat.BySize[i].Size, stat.BySize[i].Mallocs, stat.BySize[i].Frees)
+            nonEmpty += 1
+            totalMalloc += stat.BySize[i].Mallocs
+            totalFree += stat.BySize[i].Frees
 		}
 	}
+
+    if  nonEmpty > 1 {
+        fmt.Printf("\nIn all non empty size classes: malloc calls: %d free calls: %d", totalMalloc, totalFree)
+    }
 }
 
 func dumpEmptySizeClasses(stat *runtime.MemStats)  {
 
     fmt.Printf("\n\nEmpty size classes:\n\n")
+
 
 	for i := 0; i < 61; i += 1 {
 		if stat.BySize[i].Mallocs == 0 && stat.BySize[i].Frees == 0 {
