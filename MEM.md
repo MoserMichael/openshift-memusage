@@ -62,9 +62,20 @@ flow of mallocgc
 
 - obtain the mcache object for allocations up to 32768 bytes (maxSmallSize constant); If m the os thread data object has it, get it from here, otherwise there is a global mcache object that is used.
 
-- 'tiny allocations' of size up to 16 bytes (up to maxTinySize constant)
+The following size ranges are treated differenetly
 
-- 'small allocations' in size range 16 ... 32768 bytes (maxTinySize..maxSmallSize constants)
+- 'tiny allocations that don't contain pointer' if size up to 16 bytes (up to maxTinySize constant) AND the object to allocate does not contain pointers (is in noscan class)
+- 'small allocations' in size range 16 ... 32768 bytes (range between maxTinySize..maxSmallSize constants)
+- 'large allocations' of size larger than 32768 (larger than maxSmallSize constant)
+
+### Tiny Allocation that don't contain pointers
+
+Thanks to having no pointers these objects are treated differently by the garbage collector.
+Now each mcache object may have a current block of very small size, if the small allocation can be put into it, while maintaining proper alignment then do so.
+
+If this can't be done then the code will follow the logic of 'Small Allocations' (nextFreeFast if possible, then nextFree - see the next subsection)
+
+### Small allocation
     - get the size class. the size class is the array index used for lookup of the the fixed size allocator instance. For sizes up to smallSizeMax(1024) there is a fixed size allocator in size steps of smallSizeDiv(8); for range of 1024..3276 there is one in steps of 128 bytes (largeSizeDiv)
     - once the span object has been found it is used and a lookup of a currently free entry is nextFreeFast ; if no free entry is available then the span object is refilled in nextFree
             
@@ -80,6 +91,13 @@ Of course ther is no explicit function for freeing a object that is part of the 
 if the current span has been exhausted, then it needs to get another memory page for it from this mcache instance (one up in the hierarchy)
 
 [mcache refill](https://github.com/golang/go/blob/master/src/runtime/mcache.go) the current span of the given size class is returned to the heap and we get a new span object from the heap that will stand in for the current size class. Note that this is an expensive operation as a lock needs to be obtained for that purpose in [mcache cacheSpan](https://github.com/golang/go/blob/master/src/runtime/mcentral.go) 
+
+### large allocation
+
+large allocations call [largeAlloc](https://github.com/golang/go/blob/master/src/runtime/malloc.go) they allocate a number of pages that fit the allocation size, where a page size is 8192 bytes long (constant _PageSize) ; a large allocation can therefore waste up to 8k-1 bytes hat remains in the last memory page.
+
+In order to allocate a consecutive number of pages it then turns to [mpheap alloc](https://github.com/golang/go/blob/master/src/runtime/mheap.go) ; this function then switches the stack to the system stack in order to do that allocation in [mheap allocSpan](https://github.com/golang/go/blob/master/src/runtime/mheap.go)
+
 
 
 ## allocation statistics
@@ -116,6 +134,9 @@ Some things that can be seen from this program run on go 1.13.6: (output of test
 ## test program output
 
 Here is the output of the test program on go 1.13.6
+
+Thinks i don't understand:
+- the largest size class is 19072 bytes - that is smaller then what they reserve for small allocation (32k)
 
 ```
 Baseline 
