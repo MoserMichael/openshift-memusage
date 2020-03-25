@@ -96,7 +96,7 @@ if the current span has been exhausted, then it needs to get another memory page
 
 large allocations call [largeAlloc](https://github.com/golang/go/blob/master/src/runtime/malloc.go) they allocate a number of pages that fit the allocation size, where a page size is 8192 bytes long (constant _PageSize) ; a large allocation can therefore waste up to 8k-1 bytes hat remains in the last memory page.
 
-In order to allocate a consecutive number of pages it then turns to [mpheap alloc](https://github.com/golang/go/blob/master/src/runtime/mheap.go) ; this function then switches the stack to the system stack in order to do that allocation in [mheap allocSpan](https://github.com/golang/go/blob/master/src/runtime/mheap.go)
+In order to allocate a consecutive number of pages it then turns to [mpheap alloc](https://github.com/golang/go/blob/master/src/runtime/mheap.go) ; this function then switches the stack to the system stack in order to do that allocation in [mheap allocSpan](https://github.com/golang/go/blob/master/src/runtime/mheap.go) In any event a lock has to be obtained as there is one heap instance maintained for this purpose.
 
 
 
@@ -114,7 +114,7 @@ The internal copy function readmemstats_m then copies two seemingly unrelated st
 
 call ReadMemStats is quite expensive: in order to keep us from seing an outdated copy of the memory statistics all other threads must be stopped at garbage collection save points, then after copying the structure to the user supplied MemStats arguments all the threads are started up again. (so this function shouldn't be called frequently)
 
-Lets write a small test program in order to learn about memory statistics. 
+Lets write a small [test program](https://github.com/MoserMichael/openshift-memusage/blob/master/memstat.go)  in order to learn about memory statistics. 
 
 The program first calls ReadMemStat and prints the counters as a baseline.
 
